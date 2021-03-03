@@ -23,32 +23,32 @@ let rec eval (e : exp) = match e with
     | True -> True
     | False -> False
     | If(e1, e2, e3) ->
-        begin match eval e1 with
+        (match eval e1 with
             | True -> e2
             | False -> e3
             | _ -> raise Eval_error
-        end
+        )
     | Num(n) -> Num(n)
     | IsZero(e) -> 
-        begin match eval e with
+        (match eval e with
             | Num(0) -> True
-            | Num(_) -> False
+            | Num(n) when n != 0 -> False
             | _ -> raise Eval_error
-        end
+        )
     | Plus(e1, e2) -> 
-        begin match eval e1, eval e2 with
+        (match eval e1, eval e2 with
             | Num(n1), Num(n2) -> Num(n1+n2)
             | Num(n1), _ -> raise Eval_error
             | _, Num(n2) -> raise Eval_error
             | _, _ -> raise Eval_error
-        end
+        )
     | Mult(e1, e2) -> 
-        begin match eval e1, eval e2 with
+        (match eval e1, eval e2 with
             | Num(n1), Num(n2) -> Num(n1*n2)
             | Num(n1), _ -> raise Eval_error
             | _, Num(n2) -> raise Eval_error
             | _, _ -> raise Eval_error
-        end
+        )
 
 let () =
     print_endline("== Syntax ==");
