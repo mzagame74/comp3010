@@ -18,6 +18,7 @@ type exp =
     | Var of string
     | Lambda of string * typ * exp
     | Apply of exp * exp
+    | LambdaRec of string * typ * typ * string * exp
 
 type type_environment = (string * typ) list
 
@@ -39,8 +40,10 @@ let rec string_of_exp (e : exp) = match e with
     | Lambda(str, t, e') -> "(lambda " ^ str ^ ":" ^ string_of_typ t ^ "." ^
         string_of_exp e' ^ ")"
     | Apply(e1, e2) -> "(" ^ string_of_exp e1 ^ " " ^ string_of_exp e2 ^ ")"
+    | LambdaRec(f, t1, t2, x, e') -> "(lambdaRec (" ^ f ^ " : " ^
+        string_of_typ t1 ^ " -> " ^ string_of_typ t2 ^ " ) " ^ x ^ " = " ^
+        string_of_exp e' ^ ")"
 
-(* returns a list of free variables in an expression *)
 let rec free_variables (e : exp) = match e with
     | If(e1, e2, e3) -> (free_variables e1) @ (free_variables e2) @
         (free_variables e3)
@@ -52,9 +55,10 @@ let rec free_variables (e : exp) = match e with
         (free_variables e2)
     | Var(str) -> [str]
     | Lambda(str, t, e') -> List.filter (fun x -> x <> str) (free_variables e')
+    | LambdaRec(f, t1, t2, x, e') -> List.filter (fun y -> y <> f && y <> x)
+        (free_variables e')
     | _ -> raise Substitution_error
 
-(* replaces all free variables "x" in e1 with e2 *)
 let rec substitution (e1 : exp) (x : string) (e2 : exp) = match e1 with
     | True -> True
     | False -> False
@@ -67,7 +71,12 @@ let rec substitution (e1 : exp) (x : string) (e2 : exp) = match e1 with
     | Var(str) -> if str = x then e2 else e1
     | Lambda(str, t, e) -> (if str = x then e1
         else Lambda(str, t, substitution e x e2))
-    | Apply(e1', e2') -> Apply(substitution e1' x e2, e2')
+    | Apply(e1', e2') -> Apply(substitution e1' x e2, substitution e2' x e2)
+    | LambdaRec(f, t1, t2, x', e) -> (if x' = x || f = x then e1
+        else if let fv = free_variables e2 in
+        x' <> x && f <> x && not (List.mem x' fv) && not (List.mem f fv) then
+            LambdaRec(f, t1, t2, x', substitution e x e2)
+        else raise Substitution_error)
 
 let rec step (e : exp) = match e with
     | If(True, e2, e3) -> e2
@@ -87,6 +96,8 @@ let rec step (e : exp) = match e with
     | Apply(Var(str), Num(n)) -> substitution (Var(str)) str (Num(n))
     | Apply(Var(str1), Lambda(str2, t, e')) ->
         substitution (Var(str1)) str1 (Lambda(str2, t, e'))
+    | Apply(Var(str), LambdaRec(f, t1, t2, x, e')) ->
+        substitution (Var(str)) str (LambdaRec(f, t1, t2, x, e'))
     | Apply(Var(str), e2) -> Apply(Var(str), step e2)
     | Apply(Lambda(str, t, e'), True) -> substitution e' str True
     | Apply(Lambda(str, t, e'), False) -> substitution e' str False
@@ -94,6 +105,20 @@ let rec step (e : exp) = match e with
     | Apply(Lambda(str1, t1, e1), Lambda(str2, t2, e2)) ->
         substitution e1 str1 (Lambda(str2, t2, e2))
     | Apply(Lambda(str, t, e'), e2) -> Apply(Lambda(str, t, e'), step e2)
+    | Apply(LambdaRec(f, t1, t2, x, e'), True) ->
+        (let re = substitution e' x True in
+        substitution re f (LambdaRec(f, t1, t2, x, e')))
+    | Apply(LambdaRec(f, t1, t2, x, e'), False) ->
+        (let re = substitution e' x False in
+        substitution re f (LambdaRec(f, t1, t2, x, e')))
+    | Apply(LambdaRec(f, t1, t2, x, e'), Num(n)) ->
+        (let re = substitution e' x (Num(n)) in
+        substitution re f (LambdaRec(f, t1, t2, x, e')))
+    | Apply(LambdaRec(f, t1, t2, x1, e1), LambdaRec(g, t3, t4, x2, e2)) ->
+        (let re = substitution e1 x1 (LambdaRec(g, t3, t4, x2, e2)) in
+        substitution re f (LambdaRec(f, t1, t2, x1, e1)))
+    | Apply(LambdaRec(f, t1, t2, x1, e1), e2) ->
+        Apply(LambdaRec(f, t1, t2, x1, e1), step e2)
     | Apply(e1, e2) -> Apply(step e1, e2)
     | _ -> raise Eval_error
 
@@ -102,6 +127,7 @@ let rec multi_step (e : exp) = match e with
     | False -> False
     | Num(n) -> Num(n)
     | Lambda(str, t, e') -> Lambda(str, t, e')
+    | LambdaRec(f, t1, t2, x, e') -> LambdaRec(f, t1, t2, x, e')
     | e' -> multi_step(step e')
 
 let rec type_check (te : type_environment) (e : exp) = match e with
@@ -125,3 +151,5 @@ let rec type_check (te : type_environment) (e : exp) = match e with
     | Apply(e1, e2) -> (match type_check te e1, type_check te e2 with
         | TArrow(t1, t2), t -> if t <> t1 then raise Type_error else t2
         | _, _ -> raise Type_error)
+    | LambdaRec(f, t1, t2, x, e') -> let te' = ((f, TArrow(t1, t2))::te) in
+        TArrow(t1, type_check ((x, t1)::te') e')
