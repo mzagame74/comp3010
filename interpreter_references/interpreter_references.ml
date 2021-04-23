@@ -116,27 +116,29 @@ let rec step (e : exp) (m : memory) : (exp * memory) = match e with
     | If(True, e2, e3) -> e2, m
     | If(False, e2, e3) -> e3, m
     | If(RaiseDivByZero(t, e'), e2, e3) -> RaiseDivByZero(t, e'), m
-    | If(e1, e2, e3) -> If(step e1 m |> fst, e2, e3), m
+    | If(e1, e2, e3) -> let m' = step e1 m in If(m' |> fst, e2, e3), m' |> snd
     | IsZero(Num(0)) -> True, m
     | IsZero(Num(n)) -> False, m
     | IsZero(RaiseDivByZero(t, e')) -> RaiseDivByZero(t, e'), m
-    | IsZero(e') -> IsZero(step e' m |> fst), m
+    | IsZero(e') -> let m' = step e' m in IsZero(m' |> fst), m
     | Plus(Num(n1), Num(n2)) -> Num(n1 + n2), m
     | Plus(Num(n), RaiseDivByZero(t, e')) -> RaiseDivByZero(t, e'), m
-    | Plus(Num(n), e2) -> Plus(Num(n), step e2 m |> fst), m
+    | Plus(Num(n), e2) -> let m' = step e2 m in
+        Plus(Num(n), m' |> fst), m' |> snd
     | Plus(RaiseDivByZero(t, e'), e2) -> RaiseDivByZero(t, e'), m
-    | Plus(e1, e2) -> Plus(step e1 m |> fst, e2), m
+    | Plus(e1, e2) -> let m' = step e1 m in Plus(m' |> fst, e2), m' |> snd
     | Mult(Num(n1), Num(n2)) -> Num(n1 * n2), m
     | Mult(Num(n), RaiseDivByZero(t, e')) -> RaiseDivByZero(t, e'), m
-    | Mult(Num(n), e2) -> Mult(Num(n), step e2 m |> fst), m
+    | Mult(Num(n), e2) -> let m' = step e2 m in
+        Mult(Num(n), m' |> fst), m' |> snd
     | Mult(RaiseDivByZero(t, e'), e2) -> RaiseDivByZero(t, e'), m
-    | Mult(e1, e2) -> Mult(step e1 m |> fst, e2), m
+    | Mult(e1, e2) -> let m' = step e1 m in Mult(m' |> fst, e2), m' |> snd
     | Div(Num(n), Num(0)) -> RaiseDivByZero(TInt, Num(n)), m
     | Div(Num(n1), Num(n2)) -> Num(n1 / n2), m
     | Div(Num(n), RaiseDivByZero(t, e')) -> RaiseDivByZero(t, e'), m
-    | Div(Num(n), e2) -> Div(Num(n), step e2 m |> fst), m
+    | Div(Num(n), e2) -> let m' = step e2 m in Div(Num(n), m' |> fst), m' |> snd
     | Div(RaiseDivByZero(t, e'), e2) -> RaiseDivByZero(t, e'), m
-    | Div(e1, e2) -> Div(step e1 m |> fst, e2), m
+    | Div(e1, e2) -> let m' = step e1 m in Div(m' |> fst, e2), m' |> snd
     | Apply(Var(str), True) -> substitution (Var(str)) str True, m
     | Apply(Var(str), False) -> substitution (Var(str)) str False, m
     | Apply(Var(str), Num(n)) -> substitution (Var(str)) str (Num(n)), m
@@ -144,17 +146,20 @@ let rec step (e : exp) (m : memory) : (exp * memory) = match e with
         substitution (Var(str1)) str1 (Lambda(str2, t, e')), m
     | Apply(Var(str), LambdaRec(f, t1, t2, x, e')) ->
         substitution (Var(str)) str (LambdaRec(f, t1, t2, x, e')), m
+    | Apply(Var(str), Label(n)) -> substitution (Var(str)) str (Label(n)), m
     | Apply(Var(str), RaiseDivByZero(t, e')) -> RaiseDivByZero(t, e'), m
-    | Apply(Var(str), e2) -> Apply(Var(str), step e2 m |> fst), m
+    | Apply(Var(str), e2) -> let m' = step e2 m in
+        Apply(Var(str), m' |> fst), m' |> snd
     | Apply(Lambda(str, t, e'), True) -> substitution e' str True, m
     | Apply(Lambda(str, t, e'), False) -> substitution e' str False, m
     | Apply(Lambda(str, t, e'), Num(n)) -> substitution e' str (Num(n)), m
     | Apply(Lambda(str1, t1, e1), Lambda(str2, t2, e2)) ->
         substitution e1 str1 (Lambda(str2, t2, e2)), m
+    | Apply(Lambda(str, t, e'), Label(n)) -> substitution e' str (Label(n)), m
     | Apply(Lambda(str, t1, e1), RaiseDivByZero(t2, e2)) ->
         RaiseDivByZero(t2, e2), m
-    | Apply(Lambda(str, t, e'), e2) ->
-        Apply(Lambda(str, t, e'), step e2 m |> fst), m
+    | Apply(Lambda(str, t, e'), e2) -> let m' = step e2 m in
+        Apply(Lambda(str, t, e'), m' |> fst), m' |> snd
     | Apply(LambdaRec(f, t1, t2, x, e'), True) ->
         (let re = substitution e' x True in
         substitution re f (LambdaRec(f, t1, t2, x, e')), m)
@@ -167,22 +172,28 @@ let rec step (e : exp) (m : memory) : (exp * memory) = match e with
     | Apply(LambdaRec(f, t1, t2, x, e1), LambdaRec(g, t3, t4, y, e2)) ->
         (let re = substitution e1 x (LambdaRec(g, t3, t4, y, e2)) in
         substitution re f (LambdaRec(f, t1, t2, x, e1)), m)
+    | Apply(LambdaRec(f, t1, t2, x, e'), Label(n)) ->
+        (let re = substitution e' x (Label(n)) in
+        substitution re f (LambdaRec(f, t1, t2, x, e')), m)
     | Apply(LambdaRec(f, t1, t2, x, e1), RaiseDivByZero(t3, e2)) ->
         RaiseDivByZero(t3, e2), m
-    | Apply(LambdaRec(f, t1, t2, x, e'), e2) ->
-        Apply(LambdaRec(f, t1, t2, x, e'), step e2 m |> fst), m
+    | Apply(LambdaRec(f, t1, t2, x, e'), e2) -> let m' = step e2 m in
+        Apply(LambdaRec(f, t1, t2, x, e'), m' |> fst), m' |> snd
     | Apply(RaiseDivByZero(t, e'), e2) -> RaiseDivByZero(t, e'), m
-    | Apply(e1, e2) -> Apply(step e1 m |> fst, e2), m
+    | Apply(e1, e2) -> let m' = step e1 m in Apply(m' |> fst, e2), m' |> snd
     | Try(True, e2) -> True, m
     | Try(False, e2) -> False, m
     | Try(Num(n), e2) -> Num(n), m
+    | Try(Label(n), e2) -> Label(n), m
     | Try(RaiseDivByZero(t, e'), e2) -> Apply(e2, e'), m
-    | Try(e1, e2) -> Try(step e1 m |> fst, e2), m
+    | Try(e1, e2) -> let m' = step e1 m in Try(m' |> fst, e2), m' |> snd
     | RaiseDivByZero(t, True) -> RaiseDivByZero(t, True), m
     | RaiseDivByZero(t, False) -> RaiseDivByZero(t, False), m
     | RaiseDivByZero(t, Num(n)) -> RaiseDivByZero(t, Num(n)), m
+    | RaiseDivByZero(t, Label(n)) -> RaiseDivByZero(t, Label(n)), m
     | RaiseDivByZero(t, RaiseDivByZero(t', e')) -> RaiseDivByZero(t', e'), m
-    | RaiseDivByZero(t, e') -> RaiseDivByZero(t, step e' m |> fst), m
+    | RaiseDivByZero(t, e') -> let m' = step e' m in
+        RaiseDivByZero(t, m' |> fst), m' |> snd
     | Malloc(True) -> let ln = (List.length m) in Label(ln), (ln, True)::m
     | Malloc(False) -> let ln = (List.length m) in Label(ln), (ln, False)::m
     | Malloc(Num(n)) -> let ln = (List.length m) in Label(ln), (ln, Num(n))::m
@@ -197,14 +208,17 @@ let rec step (e : exp) (m : memory) : (exp * memory) = match e with
     | Assign(Label(n), True) -> Unit, (n, True)::m
     | Assign(Label(n), False) -> Unit, (n, False)::m
     | Assign(Label(ln), Num(n)) -> Unit, (ln, Num(n))::m
+    | Assign(Label(ln), Label(n)) -> Unit, (ln, Label(n))::m
     | Assign(Label(n), RaiseDivByZero(t, e')) -> RaiseDivByZero(t, e'), m
-    | Assign(Label(n), e2) -> Assign(Label(n), step e2 m |> fst), m
+    | Assign(Label(n), e2) -> let m' = step e2 m in
+        Assign(Label(n), m' |> fst), m' |> snd
     | Assign(RaiseDivByZero(t, e'), e2) -> RaiseDivByZero(t, e'), m
-    | Assign(e1, e2) -> Assign(step e1 m |> fst, e2), m
+    | Assign(e1, e2) -> let m' = step e1 m in Assign(m' |> fst, e2), m' |> snd
     | Sequence(True, e2) | Sequence(False, e2) -> e2, m
-    | Sequence(Num(n), e2) -> e2, m
+    | Sequence(Num(n), e2) | Sequence(Label(n), e2) -> e2, m
     | Sequence(RaiseDivByZero(t, e'), e2) -> RaiseDivByZero(t, e'), m
-    | Sequence(e1, e2) -> Sequence(step e1 m |> fst, e2), m
+    | Sequence(e1, e2) -> let m' = step e1 m in
+        Sequence(m' |> fst, e2), m' |> snd
     | _ -> raise Eval_error
 
 let rec multi_step (e : exp) (m : memory) : (exp * memory) = match e with
@@ -215,6 +229,7 @@ let rec multi_step (e : exp) (m : memory) : (exp * memory) = match e with
     | LambdaRec(f, t1, t2, x, e') -> LambdaRec(f, t1, t2, x, e'), m
     | RaiseDivByZero(t, Num(n)) -> RaiseDivByZero(t, Num(n)), m
     | Label(n) -> Label(n), m
+    | Unit -> Unit, m
     | e' -> let m' = step e' m in multi_step (m' |> fst) (m' |> snd)
 
 let rec type_check (te : type_environment) (e : exp) = match e with
